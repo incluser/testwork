@@ -2,16 +2,29 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 
 	//mongo
-	"go.mongodb.org/mongo-driver/bson"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	//jwt
 )
+
+var (
+	access_secret_key  = []byte("putin")
+	refresh_secret_key = []byte("biden")
+)
+
+type UserIDRequest struct {
+	UserID string `json:"user_id"`
+}
+
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
 
 func main() {
 	go start_server()
@@ -40,29 +53,4 @@ func connect_mongo() {
 		}
 	}()
 
-	coll := client.Database("sample_mflix").Collection("movies")
-	title := "Back to the Future"
-
-	var result bson.M
-	err = coll.FindOne(context.TODO(), bson.D{{"title", title}}).Decode(&result)
-	if err == mongo.ErrNoDocuments {
-		fmt.Printf("No document was found with the title %s\n", title)
-		return
-	}
-	if err != nil {
-		panic(err)
-	}
-	jsonData, err := json.MarshalIndent(result, "", "    ")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%s\n", jsonData)
-}
-
-func get_token(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Привет!")
-}
-
-func refresh_token(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Привет refresh")
 }
