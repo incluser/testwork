@@ -8,18 +8,26 @@
     go get golang.org/x/crypto/bcrypt
 
 
-3)Установить соединение с MongoDB
+3)Установить соединение с MongoDB (db: testwork, collection: users)
+    mongodb+srv://onetouchx9:xvT6ON5ofAZ0Vxb6@cluster0.7ay61ae.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+
+
 4)Разработать первый роут get_token:
+    1: Вытаскиваем поле user_id, если ее нет выбрасываем ошибку
+    2: Через утилиту generateToken создаем пары токенов сроком 15 минут и 7 дней
+    3: Через другую утилиту generateSHA256Hash создаем хеш на основе refresh_token
+    ps: bcrypt ругается на длину jwt токена (bcrypt: password length exceeds 72 bytes)
+    4: В базу записываем user_id и refresh_hash а клиенту возвращаем пару токенов
     
 
 
 
 5)Разработать второй роут refresh_token:
+    1: Пользователь в теле запроса передает рефреш токен
+    2: Находим ID пользователя через рефреш токен
+    3: Создаем для этого пользователя новый рефреш токен и параллельно хэш этого токена
+    4: Записываем новый хеш в базу а клиенту вернем новый токен
 
-
-mongo_username:overcoder9
-mongo_password:gm244922ssFqaLRR
-mongo_url: mongodb+srv://overcoder9:gm244922ssFqaLRR@default.pkdymz1.mongodb.net/?retryWrites=true&w=majority&appName=Default
 
 
 
