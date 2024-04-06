@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -30,11 +31,7 @@ func get_token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := generateToken(userID, refresh_secret_key, time.Hour*24*7)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	refreshToken := getRandomString()
 
 	hashedToken, err := generateSHA256Hash(refreshToken)
 	if err != nil {
@@ -44,7 +41,7 @@ func get_token(w http.ResponseWriter, r *http.Request) {
 
 	coll := dbClient.Database("testwork").Collection("users")
 
-	_, err = coll.InsertOne(context.TODO(), bson.M{"user_id": userID, "refresh_hash": hashedToken})
+	_, err = coll.InsertOne(context.TODO(), bson.M{"user_id": userID, "refresh_hash": hashedToken, "exp": time.Now().Add(time.Hour * 24 * 7).Unix()})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -52,12 +49,30 @@ func get_token(w http.ResponseWriter, r *http.Request) {
 
 	tokenPair := TokenPair{
 		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		RefreshToken: hashedToken,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tokenPair)
 
+}
+
+func getRandomString() string {
+	rand.Seed(time.Now().UnixNano())
+
+	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	length := 32
+	b := make([]rune, length)
+	for i := range b {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
+
+	return string(b)
+}
+
+type User struct {
+	UserID     string `bson:"user_id"`
+	Expiration int64  `bson:"exp"`
 }
 
 func refresh_token(w http.ResponseWriter, r *http.Request) {
@@ -71,25 +86,27 @@ func refresh_token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshTokenClaims, err := verifyToken(refreshTokenRequest.RefreshToken, refresh_secret_key)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
+	var user User
 
-	userID, ok := refreshTokenClaims["user_id"].(string)
-	if !ok {
-		http.Error(w, "user not found", http.StatusInternalServerError)
-		return
-	}
+	userCollection := dbClient.Database("testwork").Collection("users")
 
-	newRefreshToken, err := generateToken(userID, refresh_secret_key, time.Hour*24*7)
+	findByRefreshHash := bson.M{"refresh_hash": refreshTokenRequest.RefreshToken}
+
+	err = userCollection.FindOne(context.TODO(), findByRefreshHash).Decode(&user)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+
 	}
 
-	hashedToken, err := generateSHA256Hash(newRefreshToken)
+	if time.Now().Unix() > user.Expiration {
+		http.Error(w, "token expired", http.StatusUnauthorized)
+		return
+	}
+
+	refreshToken := getRandomString()
+
+	hashedToken, err := generateSHA256Hash(refreshToken)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -97,13 +114,13 @@ func refresh_token(w http.ResponseWriter, r *http.Request) {
 
 	collection := dbClient.Database("testwork").Collection("users")
 
-	_, err = collection.UpdateOne(context.TODO(), bson.M{"user_id": userID}, bson.M{"$set": bson.M{"refresh_hash": hashedToken}})
+	_, err = collection.UpdateOne(context.TODO(), bson.M{"user_id": user.UserID}, bson.M{"$set": bson.M{"refresh_hash": hashedToken, "exp": time.Now().Add(time.Hour * 24 * 7).Unix()}})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	accessToken, err := generateToken(userID, access_secret_key, time.Minute*15)
+	accessToken, err := generateToken(user.UserID, access_secret_key, time.Minute*15)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -111,7 +128,7 @@ func refresh_token(w http.ResponseWriter, r *http.Request) {
 
 	tokenPair := TokenPair{
 		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
+		RefreshToken: hashedToken,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
